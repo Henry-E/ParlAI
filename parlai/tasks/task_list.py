@@ -213,4 +213,11 @@ task_list = [
         "tags": [ "All", "Visual" ],
         "description": "Task which requires agents to identify which number they are seeing. From the MNIST dataset."
     },
+    {
+        "id": "WebNLG",
+        "display_name": "WebNLG",
+        "task": "webnlg",
+        "tags": [ "All",  "ChitChat" ],
+        "description": "Task which requires converting RDF triplets into text. Link: talc1.loria.fr/webnlg/stories/challenge.html"
+    },
 ]
