@@ -42,13 +42,15 @@ class WebnlgAgent(Agent):
         # TODO initialise model from saved 
 
         # TODO set model to GPU
+        self.n_examples = 0
 
     def _init_from_scratch(self):
         # TODO options for initialising the model
         self.opt['vocab_size'] = len(self.word_dict)
-        self.opt['embedding_dim'] = 300    # TODO move this option to config.py
-        self.opt['rnn_type'] = 'gru'   # TODO move to config as well
-        self.opt['optimizer'] = 'sgd'   # TODO move to config
+        # TODO move all these default options over to a config.py file
+        self.opt['embedding_dim'] = 300    
+        self.opt['rnn_type'] = 'gru'   
+        self.opt['optimizer'] = 'sgd' 
         self.opt['learning_rate'] = 0.1
         self.opt['momentum'] = 0
         self.opt['weight_decay'] = 0
@@ -66,7 +68,6 @@ class WebnlgAgent(Agent):
         """Update or predict on a single example (batchsize = 1)."""
         if self.is_shared:
             raise RuntimeError("Parallel act is not supported.")
-        ipdb.set_trace()
         reply = {'id': self.getID()}
         example = self._build_example(self.observation)
         if example is None:
@@ -74,7 +75,8 @@ class WebnlgAgent(Agent):
         # for a batch size of one all we need to do is add an extra dimension
         batch = self.batchify(example)
 
-        # TODO train 
+        # TODO train
+        self.n_examples += 1 
         self.model.update(batch)
 
         # TODO predict
@@ -110,6 +112,12 @@ class WebnlgAgent(Agent):
         # # Batch targets
         # max_length = max([t.size(0) for t in targets])
         return triples, target
+
+    def report(self):
+        return (
+            '[train] updates = %d | train loss = %.2f | exs = %d' %
+            (self.model.updates, self.model.train_loss.avg, self.n_examples)
+            )
 
 
 

@@ -1,13 +1,15 @@
 import torch
 # TODO possibly outsource optim to the OpenNMT module or one of the
-# intelligent update optimisers we found before on github
+# intelligent update optimizers we found before on github
 import torch.optim as optim
-import torch.nn.functional as functional
+import torch.nn as nn
 import logging
 
 from torch.autograd import Variable
-# TODO utility function for load pre-trained embeddings, AverageMeter
+from .utils import AverageMeter
 from .rnn_triples2text import RnnTriples2Text
+
+import ipdb
 
 logger = logging.getLogger('WebNLG')
 
@@ -21,13 +23,22 @@ class Triples2TextModel(object):
         self.opt = opt
         self.word_dict = word_dict
         self.updates = 0
-        # TODO self.train_loss = AverageMeter(), or maybe we will use 
-        # tensorboard logger instead
+        self.train_loss = AverageMeter()
 
         # Building network
         self.network = RnnTriples2Text(opt)
         # if state_dict:
         # TODO loading a presaved model
+
+        # Building criterion / loss function
+        self.criterion = self._criterion(self.opt['vocab_size'])
+
+        # Building probability generator as part of memory efficient loss
+        # TODO replace opt embedding_dim with hidden_dim 
+        # TODO it's possible vocab size might be variable in pointer network
+        self.generator = nn.Sequential(
+            nn.Linear(self.opt['embedding_dim'], self.opt['vocab_size']),
+            nn.LogSoftmax())
 
         # Building optimizer
         parameters = [p for p in self.network.parameters() if p.requires_grad]
@@ -48,19 +59,27 @@ class Triples2TextModel(object):
         # Train mode
         self.network.train()
 
+        # Clear gradients
+        self.optimizer.zero_grad()
+
         # TODO Set to GPU, this might not be the best place to set to GPU?
 
         # Run forward
         outputs = self.network(*batch)
 
-        # TODO Compute loss
-
-        # TODO Clear gradients and run backward
+        # We don't expand out the batch contents in this fuction, is this 
+        # potentially confusing?
+        targets = Variable(batch[1])    # TODO as soon as possible Variable() at a higher level
+        # Calculate loss and run backward
+        loss = self._memoryEfficientLoss(outputs, targets, self.generator, self.criterion)
+        self.train_loss.update(loss.data[0], targets.size(1))     # TODO check n is correct
 
         # TODO Clip graidents, though we might be able to do this in an 
-        # optimiser function
+        # optimizer function
 
         # Update parameters
+        self.optimizer.step()
+        self.updates += 1
 
     # def evaluate(self, batch):
         # TODO
@@ -70,3 +89,38 @@ class Triples2TextModel(object):
 
     # def save(self, filename):
         # TODO
+
+    # ------------------------------------------------------------------------
+    # Model helper functions
+    # ------------------------------------------------------------------------
+
+    def _criterion(self, vocab_size, padding_idx=0):
+        weight = torch.ones(vocab_size)
+        weight[padding_idx] = 0
+        criterion = nn.NLLLoss(weight, size_average=False)
+        # TODO apply cuda() to criterion
+        return criterion
+
+    def _memoryEfficientLoss(self, outputs, targets, generator, criterion, evaluate=False):
+        outputs = Variable(outputs.data, requires_grad=(not evaluate), volatile=evaluate)
+
+        batch_size = outputs.size(1)
+        # TODO set a maximum sequence length to process the batches by, and 
+        # split the sequence into batches of that length if memory usage is too
+        # damn high
+        outputs = outputs.view(-1, outputs.size(2))
+        scores = generator(outputs)
+        loss = criterion(scores, targets.view(-1))
+        if not evaluate:
+            # TODO figure out why they divide loss by batch size but not by
+            # number of non-padding words as well? Could be that it's 
+            # unecessary but I'd like to understand why better
+            loss.div(batch_size).backward()
+
+        # TODO Figure out if we need to return output.grad as well or not
+
+        return loss
+
+
+
+    

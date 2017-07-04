@@ -32,7 +32,10 @@ class Decoder(nn.Module):
 
         self.rnn = self.rnn_type(self.input_size, self.hidden_size)
 
-    def forward(self, input):
-        # TODO run the input through the RNN and return it
-        ipdb.set_trace()
+    def forward(self, input, hidden_init):
+        # Note that the linear transformation and linear softmax happens in a 
+        # separate memory efficient loss function 
+        outputs, _ = self.rnn(input, hidden_init)
+        return outputs
+
         

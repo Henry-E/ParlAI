@@ -29,12 +29,14 @@ class RnnTriples2Text(nn.Module):
         ''' TODO list inputs
         '''
 
-        ipdb.set_trace()
         # TODO When not testing we will be applying Variable earlier in process
         triples_emb = self.embedding(Variable(triples))
         text_emb = self.embedding(Variable(text))
 
         outputs, hidden_init = self.encoder(triples_emb)
+        outputs = self.decoder(text_emb, hidden_init)
+
+        return outputs
 
         # TODO decoder call and forward pass code for decoder
 
