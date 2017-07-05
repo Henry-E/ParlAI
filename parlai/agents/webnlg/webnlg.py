@@ -7,14 +7,17 @@ import logging
 import copy
 import ipdb
 
+from torch.autograd import Variable
 from parlai.core.agents import Agent
 from parlai.core.dict import DictionaryAgent
+from . import config
 from .model import Triples2TextModel
 
 class WebnlgAgent(Agent):
     # TODO staticmethod for parsing command line arguments from a config file
     @staticmethod
     def add_cmdline_args(argparser):
+        config.add_cmdline_args(argparser)
         DictionaryAgent.add_cmdline_args(argparser)
 
 
@@ -36,24 +39,21 @@ class WebnlgAgent(Agent):
         self.id = self.__class__.__name__
         self.word_dict = word_dict
         self.opt = copy.deepcopy(opt)
-        # TODO config.set_defaults(self.opt)
+        config.set_defaults(self.opt)
 
         self._init_from_scratch()
-        # TODO initialise model from saved 
 
-        # TODO set model to GPU
+        # TODO option to initialise model from saved 
+
+        self.opt['cuda'] = not self.opt['no_cuda'] and torch.cuda.is_available()
+        if self.opt['cuda']:
+            print('[ Using CUDA (GPU %d) ]' % opt['gpu'])
+            torch.cuda.set_device(opt['gpu'])
+            self.model.cuda()
         self.n_examples = 0
 
     def _init_from_scratch(self):
-        # TODO options for initialising the model
         self.opt['vocab_size'] = len(self.word_dict)
-        # TODO move all these default options over to a config.py file
-        self.opt['embedding_dim'] = 300    
-        self.opt['rnn_type'] = 'gru'   
-        self.opt['optimizer'] = 'sgd' 
-        self.opt['learning_rate'] = 0.1
-        self.opt['momentum'] = 0
-        self.opt['weight_decay'] = 0
 
         print('[ Initializing model from scratch ]')
         self.model = Triples2TextModel(self.opt, self.word_dict)
@@ -73,15 +73,38 @@ class WebnlgAgent(Agent):
         if example is None:
             return reply
         # for a batch size of one all we need to do is add an extra dimension
-        batch = self.batchify(example)
+        batch = self._batchify([example])
 
-        # TODO train
+        # Either train and/or generate
         self.n_examples += 1 
         self.model.update(batch)
-
-        # TODO predict
+        # TODO generate
 
         return reply
+
+    def batch_act(self, observations):
+        """Update or predict on a batch of examples.
+        More efficient than act()
+        """
+        if self.is_shared:
+            raise RuntimeError("Parallel act is not supported")
+
+        batchsize = len(observations)
+        batch_reply = [{'id': self.getID()} for _ in range(batchsize)]
+
+        examples = [self._build_example(obs) for obs in observations]
+
+        batch = self._batchify(examples)
+
+        # Either train and/or generate
+        self.n_examples += len(examples)
+        self.model.update(batch)
+        # TODO generate
+
+        return batch_reply
+
+
+
 
     # ------------------------------------------------------------------------
     # Helper functions.
@@ -94,24 +117,38 @@ class WebnlgAgent(Agent):
         target = torch.LongTensor(target)
         return triples, target
 
-    # TODO move batchify to util.py module
-    def batchify(self, batch, null=0, cuda=False):
+    def _batchify(self, batch, padding_idx=0):
         # TODO it's kind of hard to program this bit for multiple examples
         # without really understanding what data structures we're dealing
         # with
 
-        # TODO only works for batch size of 1, scale up when possible
-        triples = batch[0].unsqueeze(1)
-        target = batch[1].unsqueeze(1)
+        # TODO the sequence of action is the same for both so we could probably
+        # put this into its own function
+        triples = [ex[0] for ex in batch]
+        target = [ex[1] for ex in batch]
 
-        # # Batch triples
-        # max_length = max([t.size(0) for t in triples])
+        # Batch triples
+        # a very primitive form of padding
+        max_length = max([t.size(0) for t in triples])
+        # we're using shape SeqLen X BatchLen which is the reverse of what's
+        # expected in the embedding function & drqa but correct order for GRU 
+        triples_batch = torch.LongTensor(max_length, len(batch)).fill_(padding_idx)
+        for col, triple in enumerate(triples):
+            triples_batch[0:len(triple), col] = triple
 
+        max_length = max([t.size(0) for t in target])
+        target_batch = torch.LongTensor(max_length, len(batch)).fill_(padding_idx)
+        for col, targ in enumerate(target):
+            target_batch[0:len(targ), col] = targ
 
+        triples_variable = Variable(triples_batch)
+        target_variable = Variable(target_batch)
 
-        # # Batch targets
-        # max_length = max([t.size(0) for t in targets])
-        return triples, target
+        if self.opt['cuda']:
+            triples_variable = triples_variable.cuda()
+            target_variable = target_variable.cuda()
+
+        return triples_variable, target_variable
 
     def report(self):
         return (

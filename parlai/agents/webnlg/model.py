@@ -69,10 +69,10 @@ class Triples2TextModel(object):
 
         # We don't expand out the batch contents in this fuction, is this 
         # potentially confusing?
-        targets = Variable(batch[1])    # TODO as soon as possible Variable() at a higher level
+        target = batch[1]
         # Calculate loss and run backward
-        loss = self._memoryEfficientLoss(outputs, targets, self.generator, self.criterion)
-        self.train_loss.update(loss.data[0], targets.size(1))     # TODO check n is correct
+        loss = self._memoryEfficientLoss(outputs, target, self.generator, self.criterion)
+        self.train_loss.update(loss.data[0], target.size(1))     # TODO check n is correct
 
         # TODO Clip graidents, though we might be able to do this in an 
         # optimizer function
@@ -98,7 +98,6 @@ class Triples2TextModel(object):
         weight = torch.ones(vocab_size)
         weight[padding_idx] = 0
         criterion = nn.NLLLoss(weight, size_average=False)
-        # TODO apply cuda() to criterion
         return criterion
 
     def _memoryEfficientLoss(self, outputs, targets, generator, criterion, evaluate=False):
@@ -120,6 +119,11 @@ class Triples2TextModel(object):
         # TODO Figure out if we need to return output.grad as well or not
 
         return loss
+
+    def cuda(self):
+        self.network.cuda()
+        self.generator.cuda()
+        self.criterion.cuda()
 
 
 
