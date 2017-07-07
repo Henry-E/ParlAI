@@ -220,4 +220,10 @@ task_list = [
         "tags": [ "All",  "ChitChat" ],
         "description": "Task which requires converting RDF triplets into text. Link: talc1.loria.fr/webnlg/stories/challenge.html"
     },
+        "id": "InsuranceQA",
+        "display_name": "InsuranceQA",
+        "task": "insuranceqa",
+        "tags": [ "All",  "QA" ],
+        "description": "Task which requires agents to identify high quality answers composed by professionals with deep domain knowledge. Link: https://github.com/shuzi/insuranceQA"
+    }
 ]

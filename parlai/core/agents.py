@@ -79,6 +79,11 @@ class Agent(object):
     def reset_metrics(self):
         pass
 
+    def save(self):
+        """If applicable, save any parameters needed to recreate this agent from
+        loaded parameters."""
+        pass
+
     def share(self):
         """If applicable, share any parameters needed to create a shared version
         of this agent.
@@ -91,6 +96,7 @@ class Agent(object):
     def shutdown(self):
         """Perform any final cleanup if needed."""
         pass
+
 
 class Teacher(Agent):
     """Basic Teacher agent which keeps track of how many times it's received
@@ -149,6 +155,7 @@ class Teacher(Agent):
         shared = super().share()
         shared['metrics'] = self.metrics
         return shared
+
 
 class MultiTaskTeacher(Teacher):
     """Creates a teacher that is actually a set of teachers each based on
@@ -252,12 +259,22 @@ class MultiTaskTeacher(Teacher):
         for t in self.tasks:
             t.reset_metrics()
 
+    def save(self):
+        for t in self.tasks:
+            t.save()
+
     def share(self):
         shared = {}
         shared['class'] = type(self)
         shared['opt'] = self.opt
         shared['tasks'] = [t.share() for t in self.tasks]
         return shared
+
+    def shutdown(self):
+        """Shutdown each agent."""
+        for t in self.tasks:
+            t.shutdown()
+
 
 def name_to_agent_class(name):
     words = name.split('_')
