@@ -34,10 +34,9 @@ class Triples2TextModel(object):
         self.criterion = self._criterion(self.opt['vocab_size'])
 
         # Building probability generator as part of memory efficient loss
-        # TODO replace opt embedding_dim with hidden_dim 
         # TODO it's possible vocab size might be variable in pointer network
         self.generator = nn.Sequential(
-            nn.Linear(self.opt['embedding_dim'], self.opt['vocab_size']),
+            nn.Linear(self.opt['hidden_size'], self.opt['vocab_size']),
             nn.LogSoftmax())
 
         # Building optimizer
@@ -61,8 +60,6 @@ class Triples2TextModel(object):
 
         # Clear gradients
         self.optimizer.zero_grad()
-
-        # TODO Set to GPU, this might not be the best place to set to GPU?
 
         # Run forward
         outputs = self.network(*batch)

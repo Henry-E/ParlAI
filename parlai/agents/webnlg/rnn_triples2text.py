@@ -32,8 +32,8 @@ class RnnTriples2Text(nn.Module):
         triples_emb = self.embedding(triples)
         text_emb = self.embedding(text)
 
-        outputs, hidden_init = self.encoder(triples_emb)
-        outputs = self.decoder(text_emb, hidden_init)
+        context, hidden_init = self.encoder(triples_emb)
+        outputs = self.decoder(text_emb, hidden_init, context)
 
         return outputs
 
