@@ -31,10 +31,10 @@ class Triples2TextModel(object):
         # TODO loading a presaved model
 
         # Building criterion / loss function
-        self.criterion = self._criterion(self.opt['vocab_size'])
+        self.padding_idx = 0
+        self.criterion = nn.NLLLoss(ignore_index=self.padding_idx)
 
         # Building probability generator as part of memory efficient loss
-        # TODO it's possible vocab size might be variable in pointer network
         self.generator = nn.Sequential(
             nn.Linear(self.opt['hidden_size'], self.opt['vocab_size']),
             nn.LogSoftmax())
@@ -62,8 +62,8 @@ class Triples2TextModel(object):
         self.optimizer.zero_grad()
 
         # Run forward
-        outputs = self.network(*batch)
-
+        outputs, attentions, p_gens = self.network(*batch)
+        ipdb.set_trace()
         # We don't expand out the batch contents in this fuction, is this 
         # potentially confusing?
         target = batch[1]
@@ -91,15 +91,9 @@ class Triples2TextModel(object):
     # Model helper functions
     # ------------------------------------------------------------------------
 
-    def _criterion(self, vocab_size, padding_idx=0):
-        weight = torch.ones(vocab_size)
-        weight[padding_idx] = 0
-        criterion = nn.NLLLoss(weight, size_average=False)
-        return criterion
-
     def _memoryEfficientLoss(self, outputs, targets, generator, criterion, evaluate=False):
         outputs = Variable(outputs.data, requires_grad=(not evaluate), volatile=evaluate)
-
+        ipdb.set_trace()
         batch_size = outputs.size(1)
         # TODO set a maximum sequence length to process the batches by, and 
         # split the sequence into batches of that length if memory usage is too

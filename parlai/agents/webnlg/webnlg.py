@@ -13,12 +13,75 @@ from parlai.core.dict import DictionaryAgent
 from . import config
 from .model import Triples2TextModel
 
+# ----------------------------------------------------------------------------
+# Dictionary.
+# ----------------------------------------------------------------------------
+
+class SimpleDictionaryAgent(DictionaryAgent):
+    # custom dictionary agent to only use pre-trained embeddings and extend
+    # dictionary for the pointer network
+
+    @staticmethod
+    def add_cmdline_args(argparser):
+        group = DictionaryAgent.add_cmdline_args(argparser)
+        group.add_argument(
+            '--pretrained_words', type='bool', default=True,
+            help='Use only words found in provided embedding_file'
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Index words in embedding file
+        if self.opt['pretrained_words'] and self.opt.get('embedding_file'):
+            print('[ Indexing words with embeddings... ]')
+            self.embedding_words = set()
+            with open(self.opt['embedding_file']) as f:
+                for line in f:
+                    w = normalize_text(line.rstrip().split(' ')[0])
+                    self.embedding_words.add(w)
+            print('[ Num words in set = %d ]' %
+                  len(self.embedding_words))
+        else:
+            self.embedding_words = None
+
+    def add_to_dict(self, tokens):
+        """Builds dictionary from the list of provided tokens.
+        Only adds words contained in self.embedding_words, if not None.
+        """
+        for token in tokens:
+            if (self.embedding_words is not None and
+                token not in self.embedding_words):
+                continue
+            self.freq[token] += 1
+            if token not in self.tok2ind:
+                index = len(self.tok2ind)
+                self.tok2ind[token] = index
+                self.ind2tok[index] = token
+
+    def extend_dict(self, text):
+        """ Add words that appear in the input to the dictionary for possible use
+        later on in the pointer network copying mechanism
+        """
+        tokens = self.tokenize(text)
+
+        for token in tokens:
+            # We don't really care about frequency of UNKs
+            if token not in self.tok2ind:
+                index = len(self.tok2ind)
+                self.tok2ind[token] = index
+                self.ind2tok[index] = token
+
 class WebnlgAgent(Agent):
     # TODO staticmethod for parsing command line arguments from a config file
     @staticmethod
     def add_cmdline_args(argparser):
         config.add_cmdline_args(argparser)
-        DictionaryAgent.add_cmdline_args(argparser)
+        WebnlgAgent.dictionary_class().add_cmdline_args(argparser)
+
+    @staticmethod
+    def dictionary_class():
+        return SimpleDictionaryAgent
 
 
     def __init__(self, opt, shared=None):
@@ -27,7 +90,7 @@ class WebnlgAgent(Agent):
 
         # Load dictionary
         if not shared:
-            word_dict = DictionaryAgent(opt)
+            word_dict = WebnlgAgent.dictionary_class()(opt)
         # TODO I don't think we need to keep track of episodes
 
         if shared is not None:
@@ -111,6 +174,13 @@ class WebnlgAgent(Agent):
     # ------------------------------------------------------------------------
 
     def _build_example(self, example):
+        # Add words which appear in input but not in dictionary to dictionary
+        # to be used with pointer network later on
+        # TODO for efficiency make this only happen during the first epoch
+        # TODO possibly make this optional? It doesn't really affect anything
+        # by having it as default though
+        self.word_dict.extend_dict(example['text'])
+
         triples = self.word_dict.txt2vec(example['text'])
         target = self.word_dict.txt2vec(example['labels'])
         triples = torch.LongTensor(triples)

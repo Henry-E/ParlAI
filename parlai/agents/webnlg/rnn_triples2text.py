@@ -33,9 +33,9 @@ class RnnTriples2Text(nn.Module):
         text_emb = self.embedding(text)
 
         context, hidden_init = self.encoder(triples_emb)
-        outputs = self.decoder(text_emb, hidden_init, context)
+        outputs, attentions, p_gens = self.decoder(text_emb, hidden_init, context)
 
-        return outputs
+        return outputs, attentions, p_gens
 
     # def generate():
         # TODO returns a list of words indices instead of loss
