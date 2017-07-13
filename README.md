@@ -23,6 +23,8 @@ ParlAI is described in the following paper:
 We are in an early-release Beta. Expect some adventures and rough edges.<br>
 See the [news page](https://github.com/facebookresearch/ParlAI/blob/master/NEWS.md) for the latest additions & updates, and the website [http://parl.ai](http://parl.ai) for further docs.
 
+Please also note there is a [ParlAI Request For Proposals funding university teams, 7 awards are available - deadline Aug 25.](https://research.fb.com/programs/research-awards/proposals/parlai/)
+
 ## Goals
 
 Unified framework for evaluation of dialogue models
@@ -298,7 +300,8 @@ If you have any questions, bug reports or feature requests, please don't hesitat
 ## The Team
 ParlAI is currently maintained by Alexander H. Miller, Will Feng and Jason Weston.
 A non-exhaustive list of other major contributors includes:
-Adam Fisch,  Jiasen Lu, Antoine Bordes, Devi Parikh and Dhruv Batra.
+Adam Fisch,  Jiasen Lu, Antoine Bordes, Devi Parikh, Dhruv Batra, 
+Filipe de Avila Belbute Peres and Chao Pan.
 
 ## Citation
 
