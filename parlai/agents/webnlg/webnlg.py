@@ -6,6 +6,7 @@ import numpy as np
 import logging
 import copy
 import ipdb
+import unicodedata
 
 from torch.autograd import Variable
 from parlai.core.agents import Agent
@@ -38,7 +39,7 @@ class SimpleDictionaryAgent(DictionaryAgent):
             self.embedding_words = set()
             with open(self.opt['embedding_file']) as f:
                 for line in f:
-                    w = normalize_text(line.rstrip().split(' ')[0])
+                    w = self._normalize_text(line.rstrip().split(' ')[0])
                     self.embedding_words.add(w)
             print('[ Num words in set = %d ]' %
                   len(self.embedding_words))
@@ -71,6 +72,9 @@ class SimpleDictionaryAgent(DictionaryAgent):
                 index = len(self.tok2ind)
                 self.tok2ind[token] = index
                 self.ind2tok[index] = token
+
+    def _normalize_text(self, text):
+        return unicodedata.normalize('NFD', text)
 
 class WebnlgAgent(Agent):
     # TODO staticmethod for parsing command line arguments from a config file
@@ -173,7 +177,7 @@ class WebnlgAgent(Agent):
     # Helper functions.
     # ------------------------------------------------------------------------
 
-    def _build_example(self, example):
+    def _build_example(self, example, unk_idx=2):
         # Add words which appear in input but not in dictionary to dictionary
         # to be used with pointer network later on
         # TODO for efficiency make this only happen during the first epoch
@@ -182,10 +186,18 @@ class WebnlgAgent(Agent):
         self.word_dict.extend_dict(example['text'])
 
         triples = self.word_dict.txt2vec(example['text'])
-        target = self.word_dict.txt2vec(example['labels'])
+        targets = self.word_dict.txt2vec(example['labels'])
+        # Replace any OOV indices which appear in targets but not in triples.
+        # These are OOV words that popped in earlier triples but not this one
+        # TODO figure out why list comprehension wouldn't work with a second
+        # list. "*** NameError: name 'triples' is not defined"
+        for idx, target in enumerate(targets):
+            if target > self.opt['vocab_size'] - 1 and target not in triples:
+                targets[idx] = unk_idx
+
         triples = torch.LongTensor(triples)
-        target = torch.LongTensor(target)
-        return triples, target
+        targets = torch.LongTensor(targets)
+        return triples, targets
 
     def _batchify(self, batch, padding_idx=0):
         # TODO it's kind of hard to program this bit for multiple examples

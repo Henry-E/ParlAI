@@ -25,10 +25,15 @@ class RnnTriples2Text(nn.Module):
         # simple RNN decoder
         self.decoder = layers.Decoder(opt)
 
-    def forward(self, triples, text):
+    def forward(self, triples, text, unk_idx=2):
         ''' TODO list inputs
         '''
-        
+        # Because we extend the vocabulary for the pointer network we need to
+        # replace all the indices greater than the original vocab size with
+        # the unknown token in order for the model to work as normal
+        triples[triples>self.opt['vocab_size']-1] = unk_idx
+        text[text>self.opt['vocab_size']-1] = unk_idx
+
         triples_emb = self.embedding(triples)
         text_emb = self.embedding(text)
 
