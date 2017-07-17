@@ -24,6 +24,7 @@ class Triples2TextModel(object):
         self.word_dict = word_dict
         self.updates = 0
         self.train_loss = AverageMeter()
+        self.valid_loss = AverageMeter()
 
         # Building network
         self.network = RnnTriples2Text(opt)
@@ -62,10 +63,8 @@ class Triples2TextModel(object):
         # Clear gradients
         self.optimizer.zero_grad()
 
-        # We don't expand out the batch contents in this fuction, is this 
-        # potentially confusing? Also is cloning going to mess with the
-        # gradients? Probably they get propagated through outputs' variable
-        # TODO use a cleaner method to pass cloned variables to the loss
+        # TODO use a cleaner method to pass cloned variables to the loss.
+        # maybe just clone the whole batch and pass it to the loss function?
         triples = batch[0].clone()
         targets = batch[1].clone()
 
@@ -73,22 +72,75 @@ class Triples2TextModel(object):
         outputs, attentions, p_gens = self.network(*batch)
 
         # Calculate loss and run backward
-        loss = self._memoryEfficientLoss(outputs, attentions, p_gens, triples, 
+        loss, _ = self._memoryEfficientLoss(outputs, attentions, p_gens, triples, 
                                         targets, self.generator, self.criterion)
-        self.train_loss.update(loss.data[0], targets.size(1))     # TODO check n is correct
+        # TODO check number of targets is correct and is ignoring 
+        # padding indices
+        self.train_loss.update(loss.data[0], targets.size(1))    
 
-        # TODO Clip graidents, though we might be able to do this in an 
+        # TODO Clip gradients, though we might be able to do this in an 
         # optimizer function
 
         # Update parameters
         self.optimizer.step()
         self.updates += 1
 
-    # def evaluate(self, batch):
-        # TODO
+    def evaluate(self, batch):
+        # Eval mode
+        self.network.eval()
+        self.generator.eval()
 
-    # def generate(self, batch):
-        # TODO
+        triples = batch[0].clone()
+        targets = batch[1].clone()
+
+        # Run forward
+        outputs, attentions, p_gens = self.network(*batch)
+
+        loss, _ = self._memoryEfficientLoss(outputs, attentions, p_gens, triples, 
+                                targets, self.generator, self.criterion,
+                                evaluate=True)
+        self.valid_loss.update(loss.data[0], targets.size(1))
+
+
+    def generate(self, batch, start_idx=3, end_idx=1):
+        # Eval mode
+        self.network.eval()
+        self.generator.eval()
+
+        triples = batch[0]
+        triples_encode = batch[0].clone()
+        context, hidden_init = self.network.encode_triples(triples_encode)
+        hidden = hidden_init
+        # for now assume batch size could be greater than one
+        init_token = Variable(torch.LongTensor([start_idx]).expand(1, triples.size(1)))
+        # TODO remove fake targets vector and make probability calculation 
+        # its own function. The target vector has 1D shape Batch Size
+        targets = Variable(torch.LongTensor([start_idx]).expand(1, triples.size(1)))
+        if self.opt['cuda']:
+            init_token = init_token.cuda()
+            targets = targets.cuda()
+        token_embedding = self.network.embedding(init_token)
+        sentence = []
+        while len(sentence) < 40:
+            outputs, attentions, p_gens = self.network.decoder(token_embedding, hidden, context)
+            # We're being kind of lazy for the moment by getting the loss function
+            # to just return the final word probabilities rather than making the 
+            # probability calculation into its own function
+            _, final_scores = self._memoryEfficientLoss(outputs, attentions, p_gens, triples, 
+                        targets, self.generator, self.criterion,
+                        evaluate=True)
+            topv, topi = final_scores.topk(1)
+            if topi.data[0][0] is end_idx:
+                break
+            sentence += [topi.data[0][0]]
+            hidden = outputs
+            next_token = self.network.replace_extended_vocabulary(topi.t().clone())
+            token_embedding = self.network.embedding(next_token)
+        return sentence
+
+
+
+
 
     # def save(self, filename):
         # TODO
@@ -121,23 +173,31 @@ class Triples2TextModel(object):
                                                 max_dict_index))
         if self.opt['cuda']:
             attention_scores = attention_scores.cuda()
+        # We reshape the input sequence to match the size of the attentions
         triples_reshaped = triples.t().expand(target_seq_len,
                                               batch_size,
                                               triples_seq_len)
         attention_scores.scatter_add(2, triples_reshaped, attentions)
         attention_scores = attention_scores.view(-1, max_dict_index)
+        if max_dict_index < self.opt['vocab_size']:
+            import ipdb; ipdb.set_trace()
+            extra_zeros = Variable(torch.zeros(batch_size*target_seq_len, self.opt['vocab_size'] - max_dict_index))
+            if self.opt['cuda']:
+                extra_zeros =  extra_zeros.cuda()
+            attention_scores = torch.cat((attention_scores, extra_zeros), 1)
 
         # TODO set a maximum sequence length to process the batches by, and 
         # split the sequence into batches of that length if memory usage is too
         # high
 
-        # note that by not renaming variables requires_grad breaks seemingly
+        # note that not renaming variables seemingly breaks requires_grad
         outputs = outputs.view(-1, outputs.size(2))
         scores = generator(outputs)
-        extra_zeros = Variable(torch.zeros(scores.size(0), max_dict_index - scores.size(1)))
-        if self.opt['cuda']:
-            extra_zeros =  extra_zeros.cuda()
-        scores = torch.cat((scores, extra_zeros), 1)
+        if max_dict_index > self.opt['vocab_size']:
+            extra_zeros = Variable(torch.zeros(scores.size(0), max_dict_index - scores.size(1)))
+            if self.opt['cuda']:
+                extra_zeros =  extra_zeros.cuda()
+            scores = torch.cat((scores, extra_zeros), 1)
 
         # a bit of jiggerypokery to get p_gens from size 1 X batch_size X 1 to
         # size (target_seq_len * batch_size) X 1 so that it can be broadcast 
@@ -155,7 +215,7 @@ class Triples2TextModel(object):
         # this function and then they return the grads for each variable
         # which are then passed back through the full graph.
         # grad_output = None if outputs.grad is None else outputs.grad.data
-        return loss
+        return loss, final_scores
 
     def cuda(self):
         self.network.cuda()

@@ -133,8 +133,8 @@ class DialogTeacher(Teacher):
         self.episode_done = action['episode_done']
         action['id'] = self.getID()
         self.lastY = action.get('labels', None)
-        if not self.datatype.startswith('train'):
-            action.pop('labels', None)
+        # if not self.datatype.startswith('train'):
+            # action.pop('labels', None)
         return action
 
     # Return transformed metrics showing total examples and accuracy if avail.

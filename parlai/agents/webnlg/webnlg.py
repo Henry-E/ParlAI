@@ -119,12 +119,23 @@ class WebnlgAgent(Agent):
             self.model.cuda()
         self.n_examples = 0
 
+        # Use an internal flag to switch between handling datasets differently
+        self.dataset = 'train'
+        self.validation_sentence = ''
+
     def _init_from_scratch(self):
         self.opt['vocab_size'] = len(self.word_dict)
 
         print('[ Initializing model from scratch ]')
         self.model = Triples2TextModel(self.opt, self.word_dict)
         # TODO set embeddings
+
+    def train(self):
+        self.dataset = 'train'
+
+    def evaluate(self):
+        self.dataset = 'evaluate'
+        self.model.valid_loss.reset()
 
     def observe(self, observation):
         observation = copy.deepcopy(observation)
@@ -139,13 +150,15 @@ class WebnlgAgent(Agent):
         example = self._build_example(self.observation)
         if example is None:
             return reply
-        # for a batch size of one all we need to do is add an extra dimension
         batch = self._batchify([example])
 
         # Either train and/or generate
-        self.n_examples += 1 
-        self.model.update(batch)
-        # TODO generate
+        if self.dataset is 'train':
+            self.n_examples += 1 
+            self.model.update(batch)
+        else:
+            self.model.evaluate(batch)
+            # TODO generate
 
         return reply
 
@@ -153,20 +166,28 @@ class WebnlgAgent(Agent):
         """Update or predict on a batch of examples.
         More efficient than act()
         """
+        import ipdb; ipdb.set_trace()
         if self.is_shared:
             raise RuntimeError("Parallel act is not supported")
 
         batchsize = len(observations)
         batch_reply = [{'id': self.getID()} for _ in range(batchsize)]
 
-        examples = [self._build_example(obs) for obs in observations]
+        # Towards the end of the validation and test sets the batch can
+        # be incomplete
+        examples = [self._build_example(obs) for obs in observations if 'text' in obs]
 
         batch = self._batchify(examples)
 
         # Either train and/or generate
-        self.n_examples += len(examples)
-        self.model.update(batch)
-        # TODO generate
+        if self.dataset is 'train':
+            self.n_examples += len(examples)
+            self.model.update(batch)
+        else:
+            sentence_idxs = self.model.generate(batch)
+            self.validation_sentence = self.word_dict.vec2txt(sentence_idxs)
+            self.model.evaluate(batch)
+            # TODO generate
 
         return batch_reply
 
@@ -177,7 +198,7 @@ class WebnlgAgent(Agent):
     # Helper functions.
     # ------------------------------------------------------------------------
 
-    def _build_example(self, example, unk_idx=2):
+    def _build_example(self, example, end_idx=1, unk_idx=2, start_idx=3):
         # Add words which appear in input but not in dictionary to dictionary
         # to be used with pointer network later on
         # TODO for efficiency make this only happen during the first epoch
@@ -187,8 +208,9 @@ class WebnlgAgent(Agent):
 
         triples = self.word_dict.txt2vec(example['text'])
         targets = self.word_dict.txt2vec(example['labels'])
+        targets = [start_idx] + targets + [end_idx]
         # Replace any OOV indices which appear in targets but not in triples.
-        # These are OOV words that popped in earlier triples but not this one
+        # These are OOV words that were in earlier triples but not this one
         # TODO figure out why list comprehension wouldn't work with a second
         # list. "*** NameError: name 'triples' is not defined"
         for idx, target in enumerate(targets):
@@ -233,10 +255,17 @@ class WebnlgAgent(Agent):
         return triples_variable, target_variable
 
     def report(self):
-        return (
-            '[train] updates = %d | train loss = %.2f | exs = %d' %
-            (self.model.updates, self.model.train_loss.avg, self.n_examples)
-            )
+        if self.dataset is 'train':
+            return (
+                '[train] updates = %d | train loss = %.4f | exs = %d' %
+                (self.model.updates, self.model.train_loss.avg, self.n_examples)
+                )
+        else:
+            return (
+                'valid loss = %.4f | exs = %d | sample sentence = %s' %
+                (self.model.valid_loss.avg, self.model.valid_loss.count,
+                    self.validation_sentence)
+                )
 
 
 

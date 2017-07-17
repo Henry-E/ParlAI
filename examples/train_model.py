@@ -32,6 +32,7 @@ import copy
 import importlib
 import math
 import os
+import ipdb
 
 def run_eval(agent, opt, datatype, still_training=False, max_exs=-1):
     ''' Eval on validation/test data. '''
@@ -39,7 +40,7 @@ def run_eval(agent, opt, datatype, still_training=False, max_exs=-1):
     opt['datatype'] = datatype
     if opt.get('evaltask'):
         opt['task'] = opt['evaltask']
-
+    agent.evaluate()
     valid_world = create_task(opt, agent)
     cnt = 0
     for _ in valid_world:
@@ -55,8 +56,8 @@ def run_eval(agent, opt, datatype, still_training=False, max_exs=-1):
             break
     valid_world.shutdown()
     valid_report = valid_world.report()
-
-    metrics = datatype + ':' + str(valid_report)
+    # TODO check that agent has attribute report
+    metrics = datatype + ':' + str(agent.report())
     print(metrics)
     if still_training:
         return valid_report
@@ -116,6 +117,7 @@ def main():
     impatience = 0
     saved = False
     while True:
+        agent.train()
         world.parley()
         parleys += 1
 

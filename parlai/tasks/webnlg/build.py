@@ -2,14 +2,17 @@ import parlai.core.build_data as build_data
 import codecs
 import os
 from .benchmark_reader import Benchmark
-import ipdb
+import re
+
+def camel_case_split(identifier):
+    # https://stackoverflow.com/a/29920015/4507677
+    matches = re.finditer('.+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)', identifier)
+    return ' '.join([m.group(0) for m in matches])
 
 def create_fb_format(dpath):
     print('[building fbformat]')
-    # TODO there's a lot more information that could accompany
-    # this data. There's also some data cleaning that can only
-    # take place at this stage. We're waiting to see what is 
-    # necessary before going any further
+    # TODO we haven't built anything for the test set yet.
+    # hopefully it will be in more or less the same format minus the lexics
     ftrain = open(os.path.join(dpath, 'train.txt'), 'w')
     fvalid = open(os.path.join(dpath, 'valid.txt'), 'w')
     for dataset in {'train', 'dev'}:
@@ -28,8 +31,12 @@ def create_fb_format(dpath):
             for lex in lexics:
                 triples = ''
                 for triple in tripleset.triples:
-                    triples += triple.s + ' __s__ ' + triple.p +\
-                    ' __p__ ' + triple.o + ' __o__ '
+                    # TODO make the removal underscores and camelCase optional?
+                    triple.s = triple.s.replace('_',' ')
+                    triple.p = camel_case_split(triple.p)
+                    triple.o = triple.o.replace('_',' ')
+                    triples += '\\n' + triple.s + '\\t' + triple.p +\
+                                '\\t' + triple.o
                 target = lex.lex
                 handle = ftrain
                 if dataset == 'dev':

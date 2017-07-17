@@ -25,22 +25,31 @@ class RnnTriples2Text(nn.Module):
         # simple RNN decoder
         self.decoder = layers.Decoder(opt)
 
-    def forward(self, triples, text, unk_idx=2):
+    def forward(self, triples, text):
         ''' TODO list inputs
         '''
-        # Because we extend the vocabulary for the pointer network we need to
-        # replace all the indices greater than the original vocab size with
-        # the unknown token in order for the model to work as normal
-        triples[triples>self.opt['vocab_size']-1] = unk_idx
-        text[text>self.opt['vocab_size']-1] = unk_idx
+        context, hidden_init = self.encode_triples(triples)
 
-        triples_emb = self.embedding(triples)
+        text = self.replace_extended_vocabulary(text)
         text_emb = self.embedding(text)
-
-        context, hidden_init = self.encoder(triples_emb)
         outputs, attentions, p_gens = self.decoder(text_emb, hidden_init, context)
 
         return outputs, attentions, p_gens
+
+    def replace_extended_vocabulary(self, indices, unk_idx=2):
+        # Because we extend the vocabulary for the pointer network we need to
+        # replace all the indices greater than the original vocab size with
+        # the unknown token in order for the model to work as normal
+        indices[indices>self.opt['vocab_size']-1] = unk_idx
+        return indices
+
+    def encode_triples(self, triples):
+        triples = self.replace_extended_vocabulary(triples)
+        triples_emb = self.embedding(triples)
+        context, hidden_init = self.encoder(triples_emb)
+        return context, hidden_init
+
+
 
     # def generate():
         # TODO returns a list of words indices instead of loss
