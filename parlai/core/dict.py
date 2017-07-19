@@ -139,6 +139,7 @@ class DictionaryAgent(Agent):
 
             if self.end_token:
                 # set special end of sentence word token
+
                 index = len(self.tok2ind)
                 self.tok2ind[self.end_token] = index
                 self.ind2tok[index] = self.end_token
