@@ -6,7 +6,7 @@ import torch.nn as nn
 import logging
 
 from torch.autograd import Variable
-from .utils import AverageMeter
+from .utils import load_embeddings, AverageMeter
 from .rnn_triples2text import RnnTriples2Text
 
 import ipdb
@@ -52,8 +52,35 @@ class Triples2TextModel(object):
         else:
             raise RuntimeError('Unsupported optimizer: %s' % opt['optimizer'])
 
-    # def set_embeddings(self):
-        # TODO something about customising the use of embeddings
+    def set_embeddings(self):
+        # Read word embeddings.
+        if not self.opt.get('embedding_file'):
+            logger.warning('[ WARNING: No embeddings provided. '
+                           'Keeping random initialization. ]')
+            return
+        logger.info('[ Loading pre-trained embeddings ]')
+        embeddings = load_embeddings(self.opt, self.word_dict)
+        logger.info('[ Num embeddings = %d ]' % embeddings.size(0))
+
+        # Sanity check dimensions
+        new_size = embeddings.size()
+        old_size = self.network.embedding.weight.size()
+        if new_size[1] != old_size[1]:
+            raise RuntimeError('Embedding dimensions do not match.')
+        if new_size[0] != old_size[0]:
+            logger.warning(
+                '[ WARNING: Number of embeddings changed (%d->%d) ]' %
+                (old_size[0], new_size[0])
+            )
+
+        # Swap weights
+        self.network.embedding.weight.data = embeddings
+
+        # # If partially tuning the embeddings, keep the old values
+        # if self.opt['tune_partial'] > 0:
+        #     if self.opt['tune_partial'] + 2 < embeddings.size(0):
+        #         fixed_embedding = embeddings[self.opt['tune_partial'] + 2:]
+        #         self.network.fixed_embedding = fixed_embedding
 
     def update(self, batch):
         # Train mode
@@ -138,10 +165,6 @@ class Triples2TextModel(object):
             token_embedding = self.network.embedding(next_token)
         return sentence
 
-
-
-
-
     # def save(self, filename):
         # TODO
 
@@ -150,7 +173,7 @@ class Triples2TextModel(object):
     # ------------------------------------------------------------------------
 
     def _memoryEfficientLoss(self, outputs, attentions, p_gens, triples, 
-            targets, generator, criterion, evaluate=False, vocab_size=7000):
+            targets, generator, criterion, evaluate=False, pointer_network=False):
         # TODO in the future maybe we will make this more memory efficient by
         # cutting off the link back to earlier variables and updating grad
         # outside of this function like is done in OpenNMT. The fiddlyness
@@ -160,53 +183,63 @@ class Triples2TextModel(object):
             attentions = Variable(attentions.data, requires_grad=(not evaluate), volatile=evaluate)
             p_gens = Variable(p_gens.data, requires_grad=(not evaluate), volatile=evaluate)
         
-        batch_size = outputs.size(1)
-        target_seq_len = outputs.size(0)
-        triples_seq_len = triples.size(0)
-        max_dict_index = triples.max().data[0]+1
+        if pointer_network:
+            # TODO The maths behind how we're calculating the loss is wrong 
+            # and needs a little bit of thought to get working. We still 
+            # have to check how the abstract summarization paper deals with
+            # this.
+            batch_size = outputs.size(1)
+            target_seq_len = outputs.size(0)
+            triples_seq_len = triples.size(0)
+            max_dict_index = triples.max().data[0]+1
 
-        # Here we are assigning the probabilities for each vocab index that
-        # appears in the encoder from the decoder attentions. This is using the
-        # extended vocabulary indices & is what allows us to copy unknown words
-        attention_scores = Variable(torch.zeros(target_seq_len, 
-                                                batch_size,
-                                                max_dict_index))
-        if self.opt['cuda']:
-            attention_scores = attention_scores.cuda()
-        # We reshape the input sequence to match the size of the attentions
-        triples_reshaped = triples.t().expand(target_seq_len,
-                                              batch_size,
-                                              triples_seq_len)
-        attention_scores.scatter_add(2, triples_reshaped, attentions)
-        attention_scores = attention_scores.view(-1, max_dict_index)
-        if max_dict_index < self.opt['vocab_size']:
-            import ipdb; ipdb.set_trace()
-            extra_zeros = Variable(torch.zeros(batch_size*target_seq_len, self.opt['vocab_size'] - max_dict_index))
+            # Here we are assigning the probabilities for each vocab index that
+            # appears in the encoder from the decoder attentions. This is using the
+            # extended vocabulary indices & is what allows us to copy unknown words
+            attention_scores = Variable(torch.zeros(target_seq_len, 
+                                                    batch_size,
+                                                    max_dict_index))
             if self.opt['cuda']:
-                extra_zeros =  extra_zeros.cuda()
-            attention_scores = torch.cat((attention_scores, extra_zeros), 1)
+                attention_scores = attention_scores.cuda()
+            # We reshape the input sequence to match the size of the attentions
+            triples_reshaped = triples.t().expand(target_seq_len,
+                                                  batch_size,
+                                                  triples_seq_len)
+            attention_scores.scatter_add(2, triples_reshaped, attentions)
+            attention_scores = attention_scores.view(-1, max_dict_index)
+            if max_dict_index < self.opt['vocab_size']:
+                extra_zeros = Variable(torch.zeros(batch_size*target_seq_len, self.opt['vocab_size'] - max_dict_index))
+                if self.opt['cuda']:
+                    extra_zeros =  extra_zeros.cuda()
+                attention_scores = torch.cat((attention_scores, extra_zeros), 1)
 
-        # TODO set a maximum sequence length to process the batches by, and 
-        # split the sequence into batches of that length if memory usage is too
-        # high
+            # TODO set a maximum sequence length to process the batches by, and 
+            # split the sequence into batches of that length if memory usage is too
+            # high
 
-        # note that not renaming variables seemingly breaks requires_grad
-        outputs = outputs.view(-1, outputs.size(2))
-        scores = generator(outputs)
-        if max_dict_index > self.opt['vocab_size']:
-            extra_zeros = Variable(torch.zeros(scores.size(0), max_dict_index - scores.size(1)))
-            if self.opt['cuda']:
-                extra_zeros =  extra_zeros.cuda()
-            scores = torch.cat((scores, extra_zeros), 1)
+            # note that not renaming variables seemingly breaks requires_grad
+            outputs = outputs.view(-1, outputs.size(2))
+            scores = generator(outputs)
+            if max_dict_index > self.opt['vocab_size']:
+                extra_zeros = Variable(torch.zeros(scores.size(0), max_dict_index - scores.size(1)))
+                if self.opt['cuda']:
+                    extra_zeros =  extra_zeros.cuda()
+                scores = torch.cat((scores, extra_zeros), 1)
 
-        # a bit of jiggerypokery to get p_gens from size 1 X batch_size X 1 to
-        # size (target_seq_len * batch_size) X 1 so that it can be broadcast 
-        # against the scores
-        p_gens = p_gens.squeeze().expand(target_seq_len, batch_size).contiguous().view(-1).unsqueeze(1)
+            # a bit of jiggerypokery to get p_gens from size 1 X batch_size X 1 to
+            # size (target_seq_len * batch_size) X 1 so that it can be broadcast 
+            # against the scores
+            p_gens = p_gens.squeeze().expand(target_seq_len, batch_size).contiguous().view(-1).unsqueeze(1)
 
-        final_scores = p_gens * scores + (1 - p_gens) * attention_scores
-        # print(targets.max().data[0], final_scores.size())
-        loss = criterion(final_scores, targets.view(-1))
+            final_scores = p_gens * scores + (1 - p_gens) * attention_scores
+            # print(targets.max().data[0], final_scores.size())
+            loss = criterion(final_scores, targets.view(-1))
+        else:
+            outputs = outputs.view(-1, outputs.size(2))
+            final_scores = generator(outputs)
+            self.network.replace_extended_vocabulary(targets)   
+            loss = criterion(final_scores, targets.view(-1))
+
 
         if not evaluate:
             loss.backward()

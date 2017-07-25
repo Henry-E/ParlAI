@@ -29,14 +29,15 @@ def create_fb_format(dpath):
             lexics = entry.lexs
             category = entry.category
             for lex in lexics:
-                triples = ''
+                triples = []
                 for triple in tripleset.triples:
                     # TODO make the removal underscores and camelCase optional?
                     triple.s = triple.s.replace('_',' ')
                     triple.p = camel_case_split(triple.p)
                     triple.o = triple.o.replace('_',' ')
-                    triples += '\\n' + triple.s + '\\t' + triple.p +\
-                                '\\t' + triple.o
+                    triples += [triple.s + '\\t' + triple.p +\
+                                '\\t' + triple.o]
+                triples = '\\n'.join(triples)
                 target = lex.lex
                 handle = ftrain
                 if dataset == 'dev':

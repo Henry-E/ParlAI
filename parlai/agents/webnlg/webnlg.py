@@ -7,20 +7,22 @@ import logging
 import copy
 import ipdb
 import unicodedata
+from nltk.tokenize.moses import MosesTokenizer
 
 from torch.autograd import Variable
 from parlai.core.agents import Agent
 from parlai.core.dict import DictionaryAgent
 from . import config
 from .model import Triples2TextModel
+from .apply_bpe import BPE
+from .utils import normalize_text
 
 # ----------------------------------------------------------------------------
 # Dictionary.
 # ----------------------------------------------------------------------------
 
 class SimpleDictionaryAgent(DictionaryAgent):
-    # custom dictionary agent to only use pre-trained embeddings and extend
-    # dictionary for the pointer network
+    # custom dictionary agent for words segmented using Byte Pair Encoding
 
     @staticmethod
     def add_cmdline_args(argparser):
@@ -29,17 +31,26 @@ class SimpleDictionaryAgent(DictionaryAgent):
             '--pretrained_words', type='bool', default=True,
             help='Use only words found in provided embedding_file'
         )
+        # TODO turn this into the BPE file?
+        group.add_argument(
+            '--bpe_codes_file', type=str, default=None,
+            help='File of byte pair encoded word segments'
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
+        if self.opt.get('bpe_codes_file'):
+            bpe_codes = open(self.opt['bpe_codes_file'])
+            self.encoder = BPE(bpe_codes)
+            # TODO dict instance will break later on if there's no encoder
+        self.word_tok = MosesTokenizer()
         # Index words in embedding file
         if self.opt['pretrained_words'] and self.opt.get('embedding_file'):
             print('[ Indexing words with embeddings... ]')
             self.embedding_words = set()
             with open(self.opt['embedding_file']) as f:
                 for line in f:
-                    w = self._normalize_text(line.rstrip().split(' ')[0])
+                    w = normalize_text(line.rstrip().split(' ')[0])
                     self.embedding_words.add(w)
             print('[ Num words in set = %d ]' %
                   len(self.embedding_words))
@@ -73,11 +84,24 @@ class SimpleDictionaryAgent(DictionaryAgent):
                 self.tok2ind[token] = index
                 self.ind2tok[index] = token
 
-    def _normalize_text(self, text):
-        return unicodedata.normalize('NFD', text)
+    def tokenize(self, text, building=False):
+        """ We decided to remove sentence tokenizing because it was messing 
+        up """
+        # TODO replace the tabs and new lines with appropriate delimiter
+        # tokens, whenever we decide what form they should take
+        return (token for token in self._word_tokenize(text, building).split(' '))
+
+    def _word_tokenize(self, text, building=False):
+        """Uses nltk Treebank Word Tokenizer for tokenizing words within
+        sentences.
+        """
+        # TODO moses is converting special characters to html or something
+        # get it to stop doing that
+        word_tokens = self.word_tok.tokenize(text)
+        sub_word_tokens = self.encoder.segment(' '.join(word_tokens))
+        return sub_word_tokens
 
 class WebnlgAgent(Agent):
-    # TODO staticmethod for parsing command line arguments from a config file
     @staticmethod
     def add_cmdline_args(argparser):
         config.add_cmdline_args(argparser)
@@ -128,7 +152,7 @@ class WebnlgAgent(Agent):
 
         print('[ Initializing model from scratch ]')
         self.model = Triples2TextModel(self.opt, self.word_dict)
-        # TODO set embeddings
+        self.model.set_embeddings()
 
     def train(self):
         self.dataset = 'train'
@@ -166,7 +190,6 @@ class WebnlgAgent(Agent):
         """Update or predict on a batch of examples.
         More efficient than act()
         """
-        import ipdb; ipdb.set_trace()
         if self.is_shared:
             raise RuntimeError("Parallel act is not supported")
 

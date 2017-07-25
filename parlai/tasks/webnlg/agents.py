@@ -80,8 +80,8 @@ class DefaultTeacher(FbDialogTeacher):
                     if len(word) == 0:
                         split[i] = ''
                     else:
-                        # this line represents the only difference between 
-                        # this and fbdialog
+                        # the unescape() in this line represents the only 
+                        # difference between this and fbdialog's setup_data()
                         split[i] = unescape(word)
                 # Empty reward string same as None
                 if len(split) > 2 and split[2] == '':
