@@ -39,11 +39,39 @@ class SimpleDictionaryAgent(DictionaryAgent):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # TODO possibly create command line arguments for these? but probably
+        # unnecessary. We might also experiment with different divider tokens
+        self.triple_token = '__TRIPLE__'
+        self.predicate_token = '__PREDICATE__'
+        
+        # TODO when are we ever going to care about whether the dictionary
+        # shared or not?
+        # if not shared: - from how the init construction is done in dict.py
+
+        if self.opt.get('dict_file') and os.path.isfile(self.opt['dict_file']) \
+            or self.opt.get('dict_initpath'):
+            pass
+        else:
+            # set special triple divider word token
+            index = len(self.tok2ind)
+            self.tok2ind[self.triple_token] = index
+            self.ind2tok[index] = self.triple_token
+            # fix count for triple token to one billion and four
+            self.freq[self.triple_token] = 1000000004
+
+            # set special subject, predicate, object divider word token
+            index = len(self.tok2ind)
+            self.tok2ind[self.predicate_token] = index
+            self.ind2tok[index] = self.predicate_token
+            # fix count for divider token to one billion and five
+            self.freq[self.predicate_token] = 1000000005
+        
         if self.opt.get('bpe_codes_file'):
             bpe_codes = open(self.opt['bpe_codes_file'])
             self.encoder = BPE(bpe_codes)
             # TODO dict instance will break later on if there's no encoder
-        self.word_tok = MosesTokenizer()
+        
+        self.word_tok = MosesTokenizer(no_escape=True)
         # Index words in embedding file
         if self.opt['pretrained_words'] and self.opt.get('embedding_file'):
             print('[ Indexing words with embeddings... ]')
@@ -229,20 +257,33 @@ class WebnlgAgent(Agent):
         # by having it as default though
         self.word_dict.extend_dict(example['text'])
 
-        triples = self.word_dict.txt2vec(example['text'])
-        targets = self.word_dict.txt2vec(example['labels'])
-        targets = [start_idx] + targets + [end_idx]
-        # Replace any OOV indices which appear in targets but not in triples.
-        # These are OOV words that were in earlier triples but not this one
-        # TODO figure out why list comprehension wouldn't work with a second
-        # list. "*** NameError: name 'triples' is not defined"
-        for idx, target in enumerate(targets):
-            if target > self.opt['vocab_size'] - 1 and target not in triples:
-                targets[idx] = unk_idx
 
+        # the delimiter has to be added after the text processing otherwise
+        # it gets broken apart as if it were a subword
+        triples_split = [triple.split('\t') for triple in example['text'].split('\n')]
+        triples = []
+        for i, triple in enumerate(triples_split):
+            for j, sub_pred_obj in enumerate(triple):
+                triples += self.word_dict.txt2vec(sub_pred_obj)
+                if len(triple) == 3 and j < 2:
+                    triples += [self.word_dict['__PREDICATE__']]
+            triples += [self.word_dict['__TRIPLE__']]
         triples = torch.LongTensor(triples)
-        targets = torch.LongTensor(targets)
-        return triples, targets
+
+        if 'labels' in example:
+            # watch out, labels is a tuple not a single string
+            targets = self.word_dict.txt2vec(example['labels'][0])
+            targets = [start_idx] + targets + [end_idx]
+            # Replace any OOV indices which appear in targets but not in triples.
+            # These are OOV words that were in earlier triples but not this one
+            for idx, target in enumerate(targets):
+                if target > self.opt['vocab_size'] - 1 and target not in triples:
+                    targets[idx] = unk_idx
+            targets = torch.LongTensor(targets)
+            return triples, targets
+        else: 
+            print('returning only triples because there\'s no target text availble')
+            return triples
 
     def _batchify(self, batch, padding_idx=0):
         # TODO it's kind of hard to program this bit for multiple examples

@@ -9,8 +9,6 @@ from torch.autograd import Variable
 from .utils import load_embeddings, AverageMeter
 from .rnn_triples2text import RnnTriples2Text
 
-import ipdb
-
 logger = logging.getLogger('WebNLG')
 
 class Triples2TextModel(object):
@@ -60,10 +58,10 @@ class Triples2TextModel(object):
             return
         logger.info('[ Loading pre-trained embeddings ]')
         embeddings = load_embeddings(self.opt, self.word_dict)
-        logger.info('[ Num embeddings = %d ]' % embeddings.size(0))
+        logger.info('[ Num embeddings = %d ]' % embeddings.weight.size(0))
 
         # Sanity check dimensions
-        new_size = embeddings.size()
+        new_size = embeddings.weight.size()
         old_size = self.network.embedding.weight.size()
         if new_size[1] != old_size[1]:
             raise RuntimeError('Embedding dimensions do not match.')
@@ -74,7 +72,7 @@ class Triples2TextModel(object):
             )
 
         # Swap weights
-        self.network.embedding.weight.data = embeddings
+        self.network.embedding = embeddings
 
         # # If partially tuning the embeddings, keep the old values
         # if self.opt['tune_partial'] > 0:

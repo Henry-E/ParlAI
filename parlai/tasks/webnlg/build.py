@@ -37,9 +37,9 @@ def create_fb_format(dpath):
                     triple.o = triple.o.replace('_',' ')
                     triples += [triple.s + '\\t' + triple.p +\
                                 '\\t' + triple.o]
-                triples = '\\n'.join(triples)
                 target = lex.lex
                 handle = ftrain
+                triples = '\\n'.join(triples)
                 if dataset == 'dev':
                     handle = fvalid
                 handle.write('1 ' + triples + '\t' + target + '\n')

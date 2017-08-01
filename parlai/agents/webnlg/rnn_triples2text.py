@@ -4,7 +4,6 @@ from . import layers
 
 
 from torch.autograd import Variable   # consider deleting and doing earlier
-import ipdb
 
 class RnnTriples2Text(nn.Module):
     '''Network for reading triples and returning text for WebNLG challenge'''

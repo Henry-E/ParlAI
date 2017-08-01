@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+from torch.autograd import Variable
 import time
 import unicodedata
 from collections import Counter
@@ -33,10 +35,11 @@ class AverageMeter(object):
 def normalize_text(text):
         return unicodedata.normalize('NFD', text)
 
-def load_embeddings(opt, word_dict):
+def load_embeddings(opt, word_dict, padding_idx=0):
     """Initialize embeddings from file of pretrained vectors."""
-    embeddings = torch.Tensor(len(word_dict), opt['embedding_dim'])
-    embeddings.normal_(0, 1)
+    embeddings = nn.Embedding(opt['vocab_size'],
+                              opt['embedding_dim'],
+                              padding_idx=padding_idx)
 
     # Fill in embeddings
     if not opt.get('embedding_file'):
@@ -48,9 +51,7 @@ def load_embeddings(opt, word_dict):
             w = normalize_text(parsed[0])
             if w in word_dict:
                 vec = torch.Tensor([float(i) for i in parsed[1:]])
-                embeddings[word_dict[w]].copy_(vec)
-
-    # Zero NULL token
-    embeddings[word_dict['<NULL>']].fill_(0)
-
+                # I remember reading about inplace operations being bad for
+                # variables. Is it simply cheating by assigning it to [].data?
+                embeddings.weight[word_dict[w]].data = vec             
     return embeddings
