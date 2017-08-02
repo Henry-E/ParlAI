@@ -5,7 +5,6 @@ import os
 import numpy as np
 import logging
 import copy
-import ipdb
 import unicodedata
 from nltk.tokenize.moses import MosesTokenizer
 
@@ -235,8 +234,9 @@ class WebnlgAgent(Agent):
             self.n_examples += len(examples)
             self.model.update(batch)
         else:
-            sentence_idxs = self.model.generate(batch)
-            self.validation_sentence = self.word_dict.vec2txt(sentence_idxs)
+            # sentence_idxs = self.model.generate(batch)
+            # self.validation_sentence = self.word_dict.vec2txt(sentence_idxs)
+            self.validation_sentence = ''
             self.model.evaluate(batch)
             # TODO generate
 
