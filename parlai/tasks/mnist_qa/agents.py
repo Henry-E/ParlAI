@@ -11,7 +11,7 @@ identify.
 Useful for debugging and checking that one's image model is up and running.
 """
 
-from parlai.core.dialog_teacher import DialogTeacher
+from parlai.core.teachers import DialogTeacher
 from .build import build
 
 import json
@@ -39,8 +39,8 @@ class MnistQATeacher(DialogTeacher):
         labels_path, self.image_path = _path(opt)
         opt['datafile'] = labels_path
         self.id = 'mnist_qa'
-        self.num_strs = ['zero', 'one', 'two', 'three', 'four', 'five',
-                'six', 'seven', 'eight', 'nine']
+        self.num_strs = ['zero', 'one', 'two', 'three', 'four',
+                         'five', 'six', 'seven', 'eight', 'nine']
 
         super().__init__(opt, shared)
 

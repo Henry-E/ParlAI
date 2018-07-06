@@ -7,9 +7,8 @@
 # of patent rights can be found in the PATENTS file in the same directory.
 
 set -e # stop if any tests fail
-python3 test_init.py
-python3 test_import.py
-python3 test_dict.py
-python3 test_tasklist.py
-python3 test_threadutils.py
-python3 test_utils.py
+for test in $(ls); do
+    if [ ${test: -3} == ".py" ] && [ $test != "test_downloads.py" ] && [ $test != "test_mlb_vqa.py" ]; then
+        python3 $test;
+    fi
+done

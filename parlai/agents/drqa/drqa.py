@@ -12,37 +12,35 @@ In Association for Computational Linguistics (ACL).
 Link: https://arxiv.org/abs/1704.00051
 
 Note:
-To use pretrained word embeddings, set the --embeddings_file path argument.
+To use pretrained word embeddings, set the --embedding_file path argument.
 GloVe is recommended, see http://nlp.stanford.edu/data/glove.840B.300d.zip.
+To automatically download glove, use:
+--embedding_file models:glove_vectors/glove.840B.300d.txt
 """
 
 try:
     import torch
-except ModuleNotFoundError:
-    raise ModuleNotFoundError('Need to install pytorch: go to pytorch.org')
+except ImportError:
+    raise ImportError('Need to install pytorch: go to pytorch.org')
 
+import bisect
 import os
 import numpy as np
-import logging
 import copy
-try:
-    import spacy
-except ModuleNotFoundError:
-    raise ModuleNotFoundError(
-        "Please install spacy and spacy 'en' model: go to spacy.io"
-    )
+import pickle
+import random
 
 from parlai.core.agents import Agent
 from parlai.core.dict import DictionaryAgent
+from parlai.core.build_data import modelzoo_path
 from . import config
 from .utils import build_feature_dict, vectorize, batchify, normalize_text
 from .model import DocReaderModel
 
+
 # ------------------------------------------------------------------------------
 # Dictionary.
 # ------------------------------------------------------------------------------
-
-NLP = spacy.load('en')
 
 class SimpleDictionaryAgent(DictionaryAgent):
     """Override DictionaryAgent to use spaCy tokenizer."""
@@ -54,14 +52,18 @@ class SimpleDictionaryAgent(DictionaryAgent):
             '--pretrained_words', type='bool', default=True,
             help='Use only words found in provided embedding_file'
         )
+        group.set_defaults(dict_tokenizer='spacy')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # Index words in embedding file
-        if self.opt['pretrained_words'] and self.opt.get('embedding_file'):
+        if (self.opt['pretrained_words'] and self.opt.get('embedding_file')
+                and not self.opt.get('trained', False)):
             print('[ Indexing words with embeddings... ]')
             self.embedding_words = set()
+            self.opt['embedding_file'] = modelzoo_path(
+                self.opt.get('datapath'), self.opt['embedding_file'])
             with open(self.opt['embedding_file']) as f:
                 for line in f:
                     w = normalize_text(line.rstrip().split(' ')[0])
@@ -70,14 +72,6 @@ class SimpleDictionaryAgent(DictionaryAgent):
                   len(self.embedding_words))
         else:
             self.embedding_words = None
-
-    def tokenize(self, text, **kwargs):
-        tokens = NLP.tokenizer(text)
-        return [t.text for t in tokens]
-
-    def span_tokenize(self, text):
-        tokens = NLP.tokenizer(text)
-        return [(t.idx, t.idx + len(t.text)) for t in tokens]
 
     def add_to_dict(self, tokens):
         """Builds dictionary from the list of provided tokens.
@@ -111,7 +105,7 @@ class DrqaAgent(Agent):
         return SimpleDictionaryAgent
 
     def __init__(self, opt, shared=None):
-        if opt['numthreads'] >1:
+        if opt.get('numthreads', 1) > 1:
             raise RuntimeError("numthreads > 1 not supported for this model.")
 
         # Load dict.
@@ -135,8 +129,8 @@ class DrqaAgent(Agent):
         if self.opt.get('model_file') and os.path.isfile(opt['model_file']):
             self._init_from_saved(opt['model_file'])
         else:
-            if self.opt.get('pretrained_model'):
-                self._init_from_saved(opt['pretrained_model'])
+            if self.opt.get('init_model'):
+                self._init_from_saved(opt['init_model'])
             else:
                 self._init_from_scratch()
         self.opt['cuda'] = not self.opt['no_cuda'] and torch.cuda.is_available()
@@ -158,11 +152,10 @@ class DrqaAgent(Agent):
     def _init_from_saved(self, fname):
         print('[ Loading model %s ]' % fname)
         saved_params = torch.load(fname,
-            map_location=lambda storage, loc: storage
-        )
-
-        # TODO expand dict and embeddings for new data
-        self.word_dict = saved_params['word_dict']
+            map_location=lambda storage, loc: storage)
+        if 'word_dict' in saved_params:
+            # for compatibility with old saves
+            self.word_dict.copy_dict(saved_params['word_dict'])
         self.feature_dict = saved_params['feature_dict']
         self.state_dict = saved_params['state_dict']
         config.override_args(self.opt, saved_params['config'])
@@ -170,8 +163,9 @@ class DrqaAgent(Agent):
                                     self.feature_dict, self.state_dict)
 
     def observe(self, observation):
-        observation = copy.deepcopy(observation)
-        if not self.episode_done:
+        # shallow copy observation (deep copy can be expensive)
+        observation = observation.copy()
+        if not self.episode_done and not observation.get('preprocessed', False):
             dialogue = self.observation['text'].split('\n')[:-1]
             dialogue.extend(observation['text'].split('\n'))
             observation['text'] = '\n'.join(dialogue)
@@ -189,17 +183,21 @@ class DrqaAgent(Agent):
         ex = self._build_ex(self.observation)
         if ex is None:
             return reply
-        batch = batchify(
-            [ex], null=self.word_dict[self.word_dict.null_token], cuda=self.opt['cuda']
-        )
+        batch = batchify([ex], null=self.word_dict[self.word_dict.null_token],
+                         cuda=self.opt['cuda'])
 
         # Either train or predict
         if 'labels' in self.observation:
             self.n_examples += 1
             self.model.update(batch)
         else:
-            reply['text'] = self.model.predict(batch)[0]
+            prediction, score = self.model.predict(batch)
+            reply['text'] = prediction[0]
+            reply['text_candidates'] = [prediction[0]]
+            reply['candidate_scores'] = [score[0]]
 
+
+        reply['metrics'] = {'train_loss': self.model.train_loss.avg}
         return reply
 
     def batch_act(self, observations):
@@ -222,19 +220,38 @@ class DrqaAgent(Agent):
             return batch_reply
 
         # Else, use what we have (hopefully everything).
-        batch = batchify(
-            examples, null=self.word_dict[self.word_dict.null_token], cuda=self.opt['cuda']
-        )
+        batch = batchify(examples,
+                         null=self.word_dict[self.word_dict.null_token],
+                         cuda=self.opt['cuda'])
 
         # Either train or predict
         if 'labels' in observations[0]:
-            self.n_examples += len(examples)
-            self.model.update(batch)
+            try:
+                self.n_examples += len(examples)
+                self.model.update(batch)
+            except RuntimeError as e:
+                # catch out of memory exceptions during fwd/bck (skip batch)
+                if 'out of memory' in str(e):
+                    print('| WARNING: ran out of memory, skipping batch. '
+                          'if this happens frequently, decrease batchsize or '
+                          'truncate the inputs to the model.')
+                    batch_reply[0]['metrics'] = {
+                        'skipped_batches': 1,
+                    }
+                    return batch_reply
+                else:
+                    raise e
+
         else:
-            predictions = self.model.predict(batch)
+            predictions, scores = self.model.predict(batch)
             for i in range(len(predictions)):
                 batch_reply[valid_inds[i]]['text'] = predictions[i]
+                batch_reply[valid_inds[i]]['text_candidates'] = [predictions[i]]
+                batch_reply[valid_inds[i]]['candidate_scores'] = [scores[i]]
 
+        batch_reply[0]['metrics'] = {
+            'train_loss': self.model.train_loss.avg * batchsize,
+        }
         return batch_reply
 
     def save(self, fname=None):
@@ -242,7 +259,11 @@ class DrqaAgent(Agent):
         fname = self.opt.get('model_file', None) if fname is None else fname
         if fname:
             print("[ saving model: " + fname + " ]")
+            self.opt['trained'] = True
             self.model.save(fname)
+            # save opt file
+            with open(fname + ".opt", 'wb') as handle:
+                pickle.dump(self.opt, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     # --------------------------------------------------------------------------
     # Helper functions.
@@ -253,7 +274,7 @@ class DrqaAgent(Agent):
         If a token span cannot be found, return None. Otherwise, torchify.
         """
         # Check if empty input (end of epoch)
-        if not 'text' in ex:
+        if 'text' not in ex:
             return
 
         # Split out document + question
@@ -264,16 +285,34 @@ class DrqaAgent(Agent):
         if len(fields) < 2:
             raise RuntimeError('Invalid input. Is task a QA task?')
 
-        document, question = ' '.join(fields[:-1]), fields[-1]
-        inputs['document'] = self.word_dict.tokenize(document)
+        paragraphs, question = fields[:-1], fields[-1]
+        
+        if len(fields) > 2 and self.opt.get('subsample_docs', 0) > 0 and 'labels' in ex:
+            paragraphs = self. _subsample_doc(paragraphs, ex['labels'], self.opt.get('subsample_docs', 0))
+        
+        document = ' '.join(paragraphs)
+        inputs['document'], doc_spans = self.word_dict.span_tokenize(document)
         inputs['question'] = self.word_dict.tokenize(question)
         inputs['target'] = None
 
         # Find targets (if labels provided).
         # Return if we were unable to find an answer.
         if 'labels' in ex:
-            inputs['target'] = self._find_target(inputs['document'],
-                                                 ex['labels'])
+            if 'answer_starts' in ex:
+                # randomly sort labels and keep the first match
+                labels_with_inds = list(zip(ex['labels'], ex['answer_starts']))
+                random.shuffle(labels_with_inds)
+                for ans, ch_idx in labels_with_inds:
+                    # try to find an answer_start matching a tokenized answer
+                    start_idx = bisect.bisect_left(
+                        list(x[0] for x in doc_spans), ch_idx)
+                    end_idx = start_idx + len(self.word_dict.tokenize(ans)) - 1
+                    if end_idx < len(doc_spans):
+                        inputs['target'] = (start_idx, end_idx)
+                        break
+            else:
+                inputs['target'] = self._find_target(inputs['document'],
+                                                     ex['labels'])
             if inputs['target'] is None:
                 return
 
@@ -281,7 +320,7 @@ class DrqaAgent(Agent):
         inputs = vectorize(self.opt, inputs, self.word_dict, self.feature_dict)
 
         # Return inputs with original text + spans (keep for prediction)
-        return inputs + (document, self.word_dict.span_tokenize(document))
+        return inputs + (document, doc_spans)
 
     def _find_target(self, document, labels):
         """Find the start/end token span for all labels in document.
@@ -299,8 +338,27 @@ class DrqaAgent(Agent):
             return
         return targets[np.random.choice(len(targets))]
 
-    def report(self):
-        return (
-            '[train] updates = %d | train loss = %.2f | exs = %d' %
-            (self.model.updates, self.model.train_loss.avg, self.n_examples)
-            )
+    def _subsample_doc(self, paras, labels, subsample):
+        """Subsample paragraphs from the document (mostly for training speed).
+        """
+        # first find a valid paragraph (with a label)
+        pi = -1
+        for ind, p in enumerate(paras):
+            for l in labels:
+                if p.find(l):
+                    pi = ind
+                    break
+        if pi == -1:
+            # failed
+            return paras[0:1]
+        new_paras = []
+        if pi > 0:
+            for i in range(min(subsample, pi - 1)):
+                ind = random.randint(0, pi - 1)
+                new_paras.append(paras[ind])
+        new_paras.append(paras[pi])
+        if pi < len(paras) - 1:
+            for i in range(min(subsample, len(paras) - 1 - pi)):
+                ind = random.randint(pi + 1, len(paras) - 1)
+                new_paras.append(paras[ind])                         
+        return new_paras

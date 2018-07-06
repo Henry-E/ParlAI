@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 
-from parlai.core.fbdialog_teacher import FbDialogTeacher
+from parlai.core.teachers import FbDialogTeacher
 from parlai.core.agents import MultiTaskTeacher
 from .build import build
 
@@ -12,7 +12,7 @@ import copy
 import os
 
 tasks = {}
-tasks[1] = os.path.join('task1_qa', 'task1_qa_')
+tasks[1] = os.path.join('task1_qa', 'task1_qa_pipe_')
 tasks[2] = os.path.join('task2_recs', 'task2_recs_')
 tasks[3] = os.path.join('task3_qarecs', 'task3_qarecs_')
 tasks[4] = os.path.join('task4_reddit', 'task4_reddit', 'task4_reddit_')
@@ -30,14 +30,15 @@ def _path(task, opt):
         suffix = 'dev'
 
     datafile = os.path.join(opt['datapath'], 'MovieDialog',
-                            'movie_dialog_dataset',
-                            tasks[int(task)] + suffix + '.txt')
+                            'movie_dialog_dataset', '{t}{s}{p}.txt'.format(
+                                t=tasks[int(task)], s=suffix,
+                                p='_pipeless' if task == '4' else ''))
     if int(task) == 4:
         if dt == 'train':
             candpath = None
         else:
-            candpath = datafile.replace(suffix + '.txt',
-                                        'cand-' + dt + '.txt')
+            candpath = datafile.replace(
+                suffix + '.txt', 'cand-{dt}_pipeless.txt'.format(dt=dt))
     else:
         candpath = os.path.join(opt['datapath'], 'MovieDialog',
                                 'movie_dialog_dataset', 'entities.txt')
@@ -56,8 +57,12 @@ class KBTeacher(FbDialogTeacher):
 # Single task.
 class TaskTeacher(FbDialogTeacher):
     def __init__(self, opt, shared=None):
-        opt['datafile'], opt['cands_datafile'] = _path(
-            opt['task'].split(':')[2], opt)
+        try:
+            # expecting "moviedialog:task:N"
+            self.task = opt['task'].split(':')[2]
+        except IndexError:
+            self.task = '1'  # default task
+        opt['datafile'], opt['cands_datafile'] = _path(self.task, opt)
         super().__init__(opt, shared)
 
 

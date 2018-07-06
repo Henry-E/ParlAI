@@ -8,9 +8,8 @@
 try:
     import boto3
     import botocore
-    import psycopg2
-    import sqlalchemy
     import joblib
-except ModuleNotFoundError:
-    raise SystemExit("Please install 3rd-party dependencies by running: pip install boto3 psycopg2 sqlalchemy joblib")
-
+    import websocket
+    import sh
+except ImportError:
+    raise SystemExit("Please install 3rd-party dependencies by running: pip install boto3 joblib websocket-client sh")

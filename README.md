@@ -6,13 +6,13 @@ ParlAI (pronounced “par-lay”) is a framework for dialog AI research, impleme
 
 Its goal is to provide researchers:
 - a unified framework for sharing, training and testing dialog models
-- multi-task training over many datasets at once
+- many popular datasets available all in one place, with the ability to multi-task over them
 - seamless integration of [Amazon Mechanical Turk](https://www.mturk.com/mturk/welcome) for data collection and human evaluation
+- integration with [Facebook Messenger](http://www.parl.ai/static/docs/tutorial_messenger.html) to connect agents with humans in a chat interface
 
+Many [tasks](https://github.com/facebookresearch/ParlAI/blob/master/parlai/tasks/task_list.py) are supported, including popular datasets such as [SQuAD](https://rajpurkar.github.io/SQuAD-explorer/), [bAbI tasks](https://arxiv.org/abs/1502.05698), [MS MARCO](http://www.msmarco.org/), [MCTest](https://www.microsoft.com/en-us/research/publication/mctest-challenge-dataset-open-domain-machine-comprehension-text/), [WikiQA](https://www.microsoft.com/en-us/download/details.aspx?id=52419), [WebQuestions](http://www.aclweb.org/anthology/D13-1160), [SimpleQuestions](https://arxiv.org/abs/1506.02075), [WikiMovies](https://arxiv.org/abs/1606.03126), [QACNN & QADailyMail](https://arxiv.org/abs/1506.03340), [CBT](https://arxiv.org/abs/1511.02301), [BookTest](https://arxiv.org/abs/1610.00956), [bAbI Dialog tasks](https://arxiv.org/abs/1605.07683), [Ubuntu Dialog](https://arxiv.org/abs/1506.08909), [OpenSubtitles](http://opus.lingfil.uu.se/OpenSubtitles.php), [Cornell Movie](https://www.cs.cornell.edu/~cristian/Cornell_Movie-Dialogs_Corpus.html), [VQA-COCO2014](http://visualqa.org/), [VisDial](https://arxiv.org/abs/1611.08669) and [CLEVR](http://cs.stanford.edu/people/jcjohns/clevr/). See [here](https://github.com/facebookresearch/ParlAI/blob/master/parlai/tasks/task_list.py) for the current complete task list.
 
-Over 20 tasks are currently supported, including popular datasets such as [SQuAD](https://rajpurkar.github.io/SQuAD-explorer/), [bAbI tasks](https://arxiv.org/abs/1502.05698), [MCTest](https://www.microsoft.com/en-us/research/publication/mctest-challenge-dataset-open-domain-machine-comprehension-text/), [WikiQA](https://www.microsoft.com/en-us/download/details.aspx?id=52419), [WebQuestions](http://www.aclweb.org/anthology/D13-1160), [SimpleQuestions](https://arxiv.org/abs/1506.02075), [WikiMovies](https://arxiv.org/abs/1606.03126), [QACNN & QADailyMail](https://arxiv.org/abs/1506.03340), [CBT](https://arxiv.org/abs/1511.02301), [BookTest](https://arxiv.org/abs/1610.00956), [bAbI Dialog tasks](https://arxiv.org/abs/1605.07683), [Ubuntu Dialog](https://arxiv.org/abs/1506.08909), [OpenSubtitles](http://opus.lingfil.uu.se/OpenSubtitles.php), [Cornell Movie](https://www.cs.cornell.edu/~cristian/Cornell_Movie-Dialogs_Corpus.html), [VQA-COCO2014](http://visualqa.org/), [VisDial](https://arxiv.org/abs/1611.08669), and [MS MARCO](http://www.msmarco.org/).
-
-Included are examples of training neural models with [PyTorch](http://pytorch.org/) and [Lua Torch](http://torch.ch/), with batch training on GPU or hogwild training on CPUs. Using [Theano](http://deeplearning.net/software/theano/) or [Tensorflow](https://www.tensorflow.org/) instead is also straightforward.
+Included are examples of training neural models with [PyTorch](http://pytorch.org/) and [Lua Torch](http://torch.ch/), with batch training on GPU or hogwild training on CPUs. Using [Tensorflow](https://www.tensorflow.org/) instead is also straightforward.
 
 Our aim is for the number of tasks and agents that train on them to grow in a community-based way.
 
@@ -22,8 +22,6 @@ ParlAI is described in the following paper:
 
 We are in an early-release Beta. Expect some adventures and rough edges.<br>
 See the [news page](https://github.com/facebookresearch/ParlAI/blob/master/NEWS.md) for the latest additions & updates, and the website [http://parl.ai](http://parl.ai) for further docs.
-
-Please also note there is a [ParlAI Request For Proposals funding university teams, 7 awards are available - deadline Aug 25.](https://research.fb.com/programs/research-awards/proposals/parlai/)
 
 ## Goals
 
@@ -56,7 +54,7 @@ Set of datasets to bootstrap a working dialogue model for human interaction
 - Python framework.
 - Examples of training with PyTorch.
 - Uses zmq to talk to other toolboxes not in Python, examples of Lua Torch given.
-- Supports hogwild and batch training of models.
+- Supports batch and hogwild training and evaluation of models.
 
 ## Basic Examples
 
@@ -87,14 +85,19 @@ Display the predictions of that same IR baseline model:
 python examples/display_model.py -m ir_baseline -t "#moviedd-reddit" -dt valid
 ```
 
-Train a simple cpu-based memory network on the "10k training examples" bAbI task 1 with 8 threads (python processes) using Hogwild (requires zmq and Lua Torch):
+Train a seq2seq model on the "10k training examples" bAbI task 1 with batch size of 32 examples until accuracy reaches 95% on validation (requires pytorch):
 ```bash
-python examples/memnn_luatorch_cpu/full_task_train.py -t babi:task10k:1 -nt 8
+python examples/train_model.py -t babi:task10k:1 -m seq2seq -mf /tmp/model_s2s -bs 32 -vtim 30 -vcut 0.95
 ```
 
 Trains an attentive LSTM model on the SQuAD dataset with a batch size of 32 examples (pytorch and regex):
 ```bash
-python examples/train_model.py -m drqa -t squad -bs 32 -mf /tmp/model
+python examples/train_model.py -m drqa -t squad -bs 32 -mf /tmp/model_drqa
+```
+
+Tests an existing attentive LSTM model (DrQA reader) on the SQuAD dataset from our model zoo:
+```bash
+python examples/eval_model.py -t squad -mf "models:drqa/squad/model"
 ```
 
 ## Requirements
@@ -126,24 +129,26 @@ All needed data will be downloaded to ~/ParlAI/data, and any non-data files (suc
 The main concepts (classes) in ParlAI:
 - world - defines the environment (can be very simple, just two agents talking to each other).
 - agent – an agent in the world, e.g. the learner. (There can be multiple learners.)
-- teacher – a type of agent that talks to the learner, implements one of the tasks listed before.
+- teacher – a type of agent that talks to the learner, implements one of the
+listed before.
 
 After defining a world and the agents in it, a main loop can be run for training, testing or displaying, which calls the function world.parley(). The skeleton of an example main is given in the left panel, and the actual code for parley() on the right.
 
 <p align=center><img width="100%" src="docs/source/\_static/img/main.png" /></p>
 
-
 ## Actions and Observations
 
 All agents (including teachers) speak to each other with a single format -- the observation/action object (a python dict).
-This is used to pass text, labels and rewards between agents.
-It’s the same object type when talking (acting) or listening (observing), but a different view (with different values in the fields).
-The fields are as follows:
+This is used to pass text, labels, rewards, and more between agents.
+It’s the same object type when talking (acting) or listening (observing), but a different view (i.e. with different values in the fields).
+
+The observation/action dict fields are as follows (or see [the documentation](http://parl.ai/static/docs/observations.html)):
 
 <p align=center><img width="33%" src="docs/source/\_static/img/act-obs-dict.png" /></p>
 
-
 Each of these fields are technically optional, depending on your dataset, though the 'text' field will most likely be used in nearly all exchanges.
+
+Note: during validation and testing, the labels field is renamed eval_labels – this way, the model won’t accidentally train on the labels, but they are still available for calculating model-side loss.
 
 For a fixed supervised learning dataset like bAbI, a typical exchange from the training set might be as follows (the test set would not include labels):
 
@@ -181,6 +186,8 @@ The code is set up into several main directories:
 - **examples**: contains a few basic examples of different loops (building dictionary, train/eval, displaying data)
 - **tasks**: contains code for the different tasks available from within ParlAI
 - **mturk**: contains code for setting up Mechanical Turk, as well as sample MTurk tasks
+- **messenger**: contains code for interfacing with Facebook Messenger
+- **zoo**: contains code to directly download and use pretrained models from our model zoo
 
 Each directory is described in more detail below, ordered by dependencies.
 
@@ -194,12 +201,14 @@ The core library contains the following files:
   - **_MultiTaskTeacher_**: creates a set of teachers based on a "task string" passed to the Teacher, creating multiple teachers within it and alternating between them
   - create_task_teacher: instantiate a teacher from a given task string (e.g. 'babi:task:1' or 'squad')
 - **build_data.py**: basic utilities for setting up data for tasks. you can override if your filesystem needs different functionality.
-- **dialog_teacher.py**: contains a base teacher class for doing dialog with fixed chat logs, along with a data class for storing the data
 - **dict.py**: contains code for building general NLP-style dictionaries from observations
   - DictionaryAgent: agent which tracks the index and frequency of words in a dictionary, and can parse a sentence into indices into its dictionary or back
-- **fbdialog_teacher.py**: contains a teacher class which implements a function setup_data which parses data in the FB Dialog data format
 - **metrics.py**: computes evaluation metrics for dialog, e.g. ranking metrics, etc.
 - **params.py**: uses argparse to interpret command line arguments for ParlAI
+- **teachers.py**: contains teachers that deal with dialog-based tasks, as well as data classes for storing data
+  - **_FixedDialogTeacher_**: base class for a teacher that utilizes fixed data
+  - **_DialogTeacher_**: base class for a teacher doing dialog with fixed chat logs
+  - **_FbDialogTeacher_**: a teacher that implements a function `setup_data` that parses data in the FB Dialog data format
 - **thread_utils.py**: utility classes/functions for use in Hogwild multithreading (multiprocessing)
   - SharedTable: provides a lock-protected, shared-memory, dictionary-like interface for keeping track of metrics
 - **worlds.py**: contains a set of basic worlds for tasks to take place inside
@@ -213,36 +222,44 @@ The core library contains the following files:
 
 The agents directory contains agents that have been approved into the ParlAI framework for shared use.
 We encourage you to contribute new ones!
-Currently available within this directory:
+Currently available within [this directory](https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents):
 
 - **drqa**: an attentive [LSTM model DrQA](https://arxiv.org/abs/1704.00051) implemented in PyTorch that has competitive results on the SQuAD dataset amongst others.
+- **fairseq**: [an attentive sequence to sequence model using convolutions](https://arxiv.org/abs/1705.03122)
+- **seq2seq** a generic seq2seq model with various options
+- **ibm_seq2seq** IBM sequence to sequence model
 - **memnn**: code for an end-to-end memory network in Lua Torch
-- **remote_agent**: basic class for any agent connecting over ZMQ (memnn_luatorch_cpu uses this)
+- **mlb_vqa**: a visual question answering model based on [this paper](https://arxiv.org/abs/1610.04325)
+- **starspace**: a simple supervised embedding approach which is a strong baseline based on [this paper](https://arxiv.org/abs/1709.03856).
+- **tfidf_retriever** a simple retrieval based model, also useful as a first step for retrieving information as input to another model.
 - **ir_baseline**: simple information retrieval baseline that scores candidate responses with [TFIDF-weighted](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) matching
 - **repeat_label**: basic class for merely repeating all data sent to it (e.g. for piping to a file, debugging)
+- **remote_agent**: basic class for any agent connecting over ZMQ (memnn_luatorch_cpu uses this)
 - **local_human**: takes input from the keyboard as the act() function of the agent, so a human can act in the environment
+
+See the [directory](https://github.com/facebookresearch/ParlAI/tree/master/parlai/agents) for the complete list.
+
+	
 
 ### Examples
 
-This directory contains a few particular examples of basic loops.
+[This directory](https://github.com/facebookresearch/ParlAI/tree/master/examples) contains a few particular examples of basic loops.
 
 - base_train.py: _very simple example shows the outline of a training/validation loop using the default Agent parent class_
 - display_data.py: _uses agent.repeat_label to display data from a particular task provided on the command-line_
 - display_model.py: _shows the predictions of a provided model on a particular task provided on the command-line_
 - eval_model.py: _uses the named agent to compute evaluation metrics data for a particular task provided on the command-line_
 - build_dict.py: _build a dictionary from a particular task provided on the command-line using core.dict.DictionaryAgent_
-- memnn_luatorch_cpu: _shows a few examples of training an end-to-end memory network on a few datasets_
-- drqa: _shows how to train the attentive LSTM DrQA model of [Chen et al.](https://arxiv.org/abs/1704.00051) on SQuAD._
 
 ### Tasks
 
 Our first release included the following datasets (shown in the left panel), and accessing one of them is as simple as specifying the name of the task as a command line option, as shown in the dataset display utility (right panel):
-<p align=center><img width="100%" src="docs/source/\_static/img/tasks.png" /></p>
+<p align=center><img width="100%" src="docs/source/\_static/img/tasks2.png" /></p>
 
 Over 20 tasks were supported in the first release, including popular datasets such as
 SQuAD, bAbI tasks, MCTest, WikiQA, WebQuestions, SimpleQuestions, WikiMovies, QACNN, QADailyMail, CBT, BookTest, bAbI Dialog tasks,
-Ubuntu, OpenSubtitles, Cornell Movie, VQA-COCO2014. 
-Since then, several datasets have been added such as  VQAv2, VisDial, MNIST_QA, Personalized Dialog, InsuranceQA and MS MARCO. See [here](https://github.com/facebookresearch/ParlAI/blob/master/parlai/tasks/task_list.py) for the current complete task list.
+Ubuntu, OpenSubtitles, Cornell Movie, VQA-COCO2014.
+Since then, several datasets have been added such as  VQAv2, VisDial, MNIST_QA, Personalized Dialog, InsuranceQA, MS MARCO, TriviaQA, and CLEVR. See [here](https://github.com/facebookresearch/ParlAI/blob/master/parlai/tasks/task_list.py) for the current complete task list.
 
 Choosing a task in ParlAI is as easy as specifying it on the command line, as shown in the above image (right). If the dataset has not been used before, ParlAI will automatically download it. As all datasets are treated in the same way in ParlAI (with a single dialog API), a dialog agent can in principle switch training and testing between any of them. Even better, one can specify many tasks at once (multi-tasking) by simply providing a comma-separated list, e.g.  the command line “-t babi,squad”, to use those two datasets, or even all  the QA datasets at once  (-t #qa) or indeed every task in ParlAI at once (-t #all). The aim is to make it easy to build and evaluate very rich dialog models.
 
@@ -252,7 +269,7 @@ Each task folder contains:
 - **agents.py** file which contains default or special teacher classes used by core.create_task to instantiate these classes from command-line arguments (if desired).
 - **worlds.py** file can optionally be added for tasks that need to define new/complex environments.
 
-To add your own task:
+To add your own task (see the [tutorial](http://www.parl.ai/static/docs/tutorial_task.html) for far more details):
 - (optional) implement build.py to download any needed data
 - implement agents.py, with at least a DefaultTeacher (extending Teacher or one of its children)
     - if your data is in [FB Dialog format](https://github.com/facebookresearch/ParlAI/blob/master/parlai/core/fbdialog_teacher.py), subclass FbDialogTeacher
@@ -294,13 +311,18 @@ To add your own MTurk task:
 
 Please see [the MTurk tutorial](http://parl.ai/static/docs/mturk.html) to learn more about the MTurk examples and how to create and run your own task.
 
+### Messenger
+
+Please see [the Facebook Messenger tutorial](http://parl.ai/static/docs/tutorial_messenger.html) to learn more about how to use ParlAI with Facebook Messenger.
+
+
 ## Support
 If you have any questions, bug reports or feature requests, please don't hesitate to post on our [Github Issues page](https://github.com/facebookresearch/ParlAI/issues).
 
 ## The Team
-ParlAI is currently maintained by Alexander H. Miller, Will Feng and Jason Weston.
+ParlAI is currently maintained by Emily Dinan, Alexander H. Miller, Kurt Shuster, Jack Urbanek and Jason Weston.
 A non-exhaustive list of other major contributors includes:
-Adam Fisch,  Jiasen Lu, Antoine Bordes, Devi Parikh, Dhruv Batra, 
+Will Feng, Adam Fisch, Jiasen Lu, Antoine Bordes, Devi Parikh, Dhruv Batra,
 Filipe de Avila Belbute Peres and Chao Pan.
 
 ## Citation

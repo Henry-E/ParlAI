@@ -1,5 +1,6 @@
 # MISC
 *.tmp
+.watchmanconfig
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -11,6 +12,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+.vector_cache/
 env/
 build/
 data/
@@ -25,7 +27,9 @@ lib64/
 parts/
 sdist/
 var/
+convai2_submissions/
 parlai_internal/
+parlai_external/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -68,6 +72,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/source/task_list.inc
 
 # PyBuilder
 target/
@@ -83,6 +88,11 @@ celerybeat-schedule
 
 # dotenv
 .env
+
+#emacs
+*~
+\#*\#
+.\#*
 
 # virtualenv
 venv/
@@ -105,3 +115,14 @@ ENV/
 
 # MTurk
 tmp/
+*.pickle
+# Heroku things
+heroku-cli-*
+
+# IntelliJ IDEA
+.idea
+*.iml
+
+# VSCode
+
+*.vscode

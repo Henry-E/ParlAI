@@ -4,7 +4,6 @@
 # LICENSE file in the root directory of this source tree. An additional grant
 # of patent rights can be found in the PATENTS file in the same directory.
 import torch
-import time
 import unicodedata
 from collections import Counter
 
@@ -29,14 +28,15 @@ def load_embeddings(opt, word_dict):
     with open(opt['embedding_file']) as f:
         for line in f:
             parsed = line.rstrip().split(' ')
-            assert(len(parsed) == opt['embedding_dim'] + 1)
-            w = normalize_text(parsed[0])
-            if w in word_dict:
-                vec = torch.Tensor([float(i) for i in parsed[1:]])
-                embeddings[word_dict[w]].copy_(vec)
+            if len(parsed) > 2:
+                assert(len(parsed) == opt['embedding_dim'] + 1)
+                w = normalize_text(parsed[0])
+                if w in word_dict:
+                    vec = torch.Tensor([float(i) for i in parsed[1:]])
+                    embeddings[word_dict[w]].copy_(vec)
 
     # Zero NULL token
-    embeddings[word_dict['<NULL>']].fill_(0)
+    embeddings[word_dict['__NULL__']].fill_(0)
 
     return embeddings
 
@@ -105,8 +105,8 @@ def vectorize(opt, ex, word_dict, feature_dict):
         return document, features, question
 
     # ...or with target
-    start = torch.LongTensor(1).fill_(ex['target'][0])
-    end = torch.LongTensor(1).fill_(ex['target'][1])
+    start = torch.LongTensor([ex['target'][0]])
+    end = torch.LongTensor([ex['target'][1]])
 
     return document, features, question, start, end
 
