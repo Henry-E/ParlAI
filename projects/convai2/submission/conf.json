@@ -1,0 +1,18 @@
+{
+    "models_root": "/home/henrye/projects/convai2/convai2_models/experiments/training_models_11h51m_Thu_30-08-2018_51111/train/",
+    "models": [
+        {
+            "id": 0,
+            "model": "randal_15h49m_Wed_12-09-2018/normal_step_55000.pt",
+            "timeout": 1000,
+            "on_timeout": "to_cpu",
+            "load": true,
+            "opt": {
+                "log_file" : "./onmt.log",
+                "beam_size": 5,
+                "n_best": 1,
+		"block_ngram_repeat": 3
+            }
+        }
+    ]
+}

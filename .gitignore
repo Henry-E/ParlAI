@@ -1,6 +1,7 @@
 # MISC
 *.tmp
 .watchmanconfig
+temp_eval_files/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
